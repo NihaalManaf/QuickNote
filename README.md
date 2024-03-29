@@ -1,3 +1,1 @@
 # QuickNote
-# QuickNote
-# QuickNote
