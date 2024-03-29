@@ -1,9 +1,11 @@
 import openai
+import os
 import pdfplumber
-from values import openAI_token, pdf_path
-
-
-openai.api_key = openAI_token
+from dotenv import load_dotenv, dotenv_values
+ 
+load_dotenv()
+openai.api_key = os.getenv('openAI_token')
+pdf_path = os.getenv('pdf_path')
 
 def extract_text_from_pdf(pdf_path):
     text = ''
@@ -25,5 +27,4 @@ answer = openai.ChatCompletion.create(
 
 answer = answer.choices[0].message.content
 print(answer)
-
 
