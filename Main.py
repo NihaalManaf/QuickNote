@@ -8,13 +8,18 @@ import youtube_dl
 from youtube_transcript_api import YouTubeTranscriptApi
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
+from google.cloud import storage
+
 
 
 load_dotenv()
 openai.api_key = os.getenv('openAI_token')
 pdf_path = os.getenv('pdf_path')
 project_id = os.getenv('project_id')
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'service_account.json'
+storage_client = storage.Client()
 location = 'asia-southeast1'
+bucket_name = os.getenv('bucket_name')
 
 vertexai.init(project=project_id, location=location)
 
@@ -31,6 +36,28 @@ def generate_qns_googleapi() -> str:
         ]
     )
     return response
+
+def upload_blob(bucket_name, source_file_name, destination_blob_name):
+    """Uploads a file to the bucket."""
+    bucket = storage_client.get_bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+
+    blob.upload_from_filename(source_file_name)
+
+    print(
+        "File {} uploaded to {}.".format(
+            source_file_name, destination_blob_name
+        )
+    )
+
+def delete_blob(bucket_name, blob_name):
+    """Deletes a blob from the bucket."""
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+
+    blob.delete()
+
+    print(f"Blob {blob_name} deleted.")
 
 def get_youtube_video_id(url):
     # Extract video ID from URL
@@ -90,25 +117,32 @@ def extract_text_from_pdf(pdf_path):
 
 # quantity = input("How many questions would you like?: ")
 # type = input("How would you like the output?: ")
+
+def LinktoQns(video_url):
+    download_video(video_url) #downloads video
+    upload_blob(bucket_name, 'set.mp4', 'set.mp4')
+    print(generate_qns_googleapi().text) #Google API Call
+    delete_blob(bucket_name, 'set.mp4')
+    os.remove('set.mp4')
     
-answer = openai.ChatCompletion.create(
-    model='gpt-3.5-turbo',
-    messages=[
-        {"role": "system",
-        "content": "create" + quantity + "questions from the following text. Return data as " + type + 
-        """ for the user. If user needs notes, provide as much info as possible in a condesned manner. 
-        If the user needs flashcards or question paper, provide the number of questions mentioned previously and put all the quetsions together first and then povide an answer for each question below in the same order"""},
-        {"role": "user", "content": content},
-    ]
-)
+# answer = openai.ChatCompletion.create(
+#     model='gpt-3.5-turbo',
+#     messages=[
+#         {"role": "system",
+#         "content": "create" + quantity + "questions from the following text. Return data as " + type + 
+#         """ for the user. If user needs notes, provide as much info as possible in a condesned manner. 
+#         If the user needs flashcards or question paper, provide the number of questions mentioned previously and put all the quetsions together first and then povide an answer for each question below in the same order"""},
+#         {"role": "user", "content": content},
+#     ]
+# )
 
 # answer = answer.choices[0].message.content
 # print(answer)
 
+# extract_frames('set.mp4', 5)  # Extract frames from downloaded videso | DEEMED REDUNDANT
+# get_transcript(video_url) #downloads transcipt from video | DEEMED REDUNDANT
+# content = extract_text_from_pdf(pdf_path) #GPT-3.5 API Call | DEEMED REDUNDANT
+
 
 video_url =input("Enter the video URL: ")
-content = extract_text_from_pdf(pdf_path) #GPT-3.5 API Call
-get_transcript(video_url) #downloads transcipt from video | DEEMED REDUNDANT
-download_video(video_url) #downloads video
-extract_frames('set.mp4', 5)  # Extract frames from downloaded videso | DEEMED REDUNDANT
-print(generate_qns_googleapi().text) #Google API Call
+LinktoQns(video_url)
