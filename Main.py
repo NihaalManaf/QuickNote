@@ -146,3 +146,8 @@ def LinktoQns(video_url):
 
 video_url =input("Enter the video URL: ")
 LinktoQns(video_url)
+
+# Things to consider.
+# Video name is not unique. So when multiple people use this, it may end up crashing the system. So once we are 
+# closer to completing the back end and begin front end production, we should consider how this will function 
+# with multiple users. possibly requiring mongodb
