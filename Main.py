@@ -6,12 +6,31 @@ from dotenv import load_dotenv, dotenv_values
 import cv2
 import youtube_dl
 from youtube_transcript_api import YouTubeTranscriptApi
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part
+
 
 load_dotenv()
 openai.api_key = os.getenv('openAI_token')
 pdf_path = os.getenv('pdf_path')
+project_id = os.getenv('project_id')
+location = 'asia-southeast1'
+
+vertexai.init(project=project_id, location=location)
 
 quantity, type, content = "", "", ""
+
+def generate_qns_googleapi() -> str:
+    vision_model = GenerativeModel("gemini-1.0-pro-vision")
+    response = vision_model.generate_content(
+        [
+            Part.from_uri(
+                "gs://quicknotevideos/set.mp4", mime_type="video/mp4"
+            ),
+            "Generate 10 questions based on the video content and provide the answers below. If there is math content, you should ask sample math questions instead of the concepts",
+        ]
+    )
+    return response
 
 def get_youtube_video_id(url):
     # Extract video ID from URL
@@ -71,7 +90,6 @@ def extract_text_from_pdf(pdf_path):
 
 # quantity = input("How many questions would you like?: ")
 # type = input("How would you like the output?: ")
-# content = extract_text_from_pdf(pdf_path)
     
 answer = openai.ChatCompletion.create(
     model='gpt-3.5-turbo',
@@ -83,11 +101,14 @@ answer = openai.ChatCompletion.create(
         {"role": "user", "content": content},
     ]
 )
-answer = answer.choices[0].message.content
-print(answer)
+
+# answer = answer.choices[0].message.content
+# print(answer)
 
 
-video_url =input("Enter the video URL: ")
-get_transcript(video_url)
-#download_video(video_url)
-#extract_frames('set.mp4', 5)  # Extract a frame every 5 seconds
+# video_url =input("Enter the video URL: ")
+# content = extract_text_from_pdf(pdf_path) #GPT-3.5 API Call
+# get_transcript(video_url) #downloads transcipt from video | DEEMED REDUNDANT
+# download_video(video_url) #downloads video
+# extract_frames('set.mp4', 5)  # Extract frames from downloaded videso | DEEMED REDUNDANT
+print(generate_qns_googleapi().text) #Google API Call

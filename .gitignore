@@ -1,2 +1,4 @@
 .env
 *.pdf
+service_account.json
+*.mp4
