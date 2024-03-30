@@ -27,7 +27,7 @@ def generate_qns_googleapi() -> str:
             Part.from_uri(
                 "gs://quicknotevideos/set.mp4", mime_type="video/mp4"
             ),
-            "Generate 10 questions based on the video content and provide the answers below. If there is math content, you should ask sample math questions instead of the concepts",
+            "Generate 10 questions based on the video content and provide the answers below. If there is math content, you should ask sample math questions instead of the concepts themselves.",
         ]
     )
     return response
@@ -106,9 +106,9 @@ answer = openai.ChatCompletion.create(
 # print(answer)
 
 
-# video_url =input("Enter the video URL: ")
-# content = extract_text_from_pdf(pdf_path) #GPT-3.5 API Call
-# get_transcript(video_url) #downloads transcipt from video | DEEMED REDUNDANT
-# download_video(video_url) #downloads video
-# extract_frames('set.mp4', 5)  # Extract frames from downloaded videso | DEEMED REDUNDANT
+video_url =input("Enter the video URL: ")
+content = extract_text_from_pdf(pdf_path) #GPT-3.5 API Call
+get_transcript(video_url) #downloads transcipt from video | DEEMED REDUNDANT
+download_video(video_url) #downloads video
+extract_frames('set.mp4', 5)  # Extract frames from downloaded videso | DEEMED REDUNDANT
 print(generate_qns_googleapi().text) #Google API Call
