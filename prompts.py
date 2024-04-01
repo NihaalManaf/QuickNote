@@ -1,29 +1,31 @@
-flashcard = """The user is asking for flashcards. Hence you are to generate flashcards from the information mentioned previously. Follow the format below in your ouput.
-Question 1: What is the capital of Nigeria?
-Answer 1: Abuja
+flashcard = """Generate questions Follow the format below in your ouput.
 
-Question 2: What is the capital of Ghana?
-Answer 2: Accra
+Question 1: <place question here>
+Answer 1: <example answer>
 
-Do not forget to number the questions and answers accordingly. The questions and answers provided above are just an example.  If you are unable to do, explain why. You are provide questions of quantity """
+Question 2: <place question here>
+Answer 2: <example answer>
+
+Do not respond with just "good" or "bad"  You are to provide 10 questions"""
 
 question_paper = ''''
 The user is asking for questions. Hence you are to generate questions from the information mentioned previously. Follow the format below in your ouput.
 
-Question 1: What is the capital of Nigeria?
-A. Lagos
-B. Abuja
-C. Kano
-D. Ibadan
+Question 1: <place question here>
+A. <option 1>
+B. <option 2>
+C. <option 3>
+D. <option 4>
 
-Answer: B
+Answer: <correct option out of the 4>
 
-Question 2: What is the capital of Ghana?
-A. Lagos
-B. Abuja
-C. Accra
-D. Ibadan
+Question 2: <place question here>
+A. <option 1>
+B. <option 2>
+C. <option 3>
+D. <option 4>
 
-Answer: C
+Answer: <correct option out of the 4>
 
-Do not forget to number the questions and answers accordingly. The questions and answers provided above are just an example. Generate options for each question that are similar to the correct answer. You are to provide questions of quantity '''
+Do not forget to number the questions and answers accordingly. Generate options for each question that are similar to the correct answer. Do not respond with just "good" or "bad". You are to provide questions of quantity '''
+

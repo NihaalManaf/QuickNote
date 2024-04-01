@@ -12,6 +12,13 @@ from google.cloud import storage
 import prompts
 from moviepy.editor import VideoFileClip
 import math
+import requests
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import pdfkit
+from PyPDF2 import PdfFileReader, PdfFileWriter
+import time
 
 
 load_dotenv()
@@ -130,6 +137,35 @@ def extract_text_from_pdf(pdf_path):
             text += page.extract_text()
     return text
 
+def split_pdf(input_pdf, output_folder, max_pages=16):
+    # Create a PdfFileReader object to read the input PDF
+    pdf_reader = PdfFileReader(input_pdf)
+
+    # Get the total number of pages in the input PDF
+    total_pages = pdf_reader.numPages
+
+    # Calculate the number of PDFs needed
+    num_pdfs = (total_pages + max_pages - 1) // max_pages
+
+    # Iterate through each chunk of pages
+    for i in range(num_pdfs):
+        # Create a new PdfFileWriter object for each chunk
+        pdf_writer = PdfFileWriter()
+
+        # Determine the start and end page for the current chunk
+        start_page = i * max_pages
+        end_page = min((i + 1) * max_pages, total_pages)
+
+        # Add pages from the input PDF to the writer for the current chunk
+        for page_number in range(start_page, end_page):
+            pdf_writer.addPage(pdf_reader.getPage(page_number))
+
+        # Create a new PDF file name for the current chunk
+        output_pdf = os.path.join(output_folder, f"output_{i + 1}.pdf")
+
+        # Write the current chunk to the output PDF file
+        with open(output_pdf, "wb") as output_file:
+            pdf_writer.write(output_file)
 
 #main functions to generate output
 
@@ -156,30 +192,54 @@ def contexttoQns(context, quantity, type):
     context = context + prompt + quantity
     response = vision_model.generate_content(context)
     return response
-    
 
 
-def pdftoQns(quantity, type):
+def pdftoQns(quantity, type, name):
     
     if type == 'flashcard':
         prompt = prompts.flashcard
     else:
         prompt = prompts.question_paper
 
-    upload_blob(bucket_name, 'pdf.pdf')
-    print(generate_qns_googleapi(prompt + quantity, 'application/pdf', 'pdf.pdf').text) #Google API Call
-    delete_blob(bucket_name, 'pdf.pdf')
+    upload_blob(bucket_name, name+'.pdf')
+    print(generate_qns_googleapi(prompt + quantity, 'application/pdf', name +'.pdf').text) #Google API Call
+    delete_blob(bucket_name, name+'.pdf')
 
+def websitetopdf():
+    link = input("Enter the website URL: ")
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
 
-link = str(input("Enter the video link: "))
-type = input("What type of questions do you want? (flashcard or question_paper): ")
-quantity = input("How many questions do you want? ")
-context = compilationcontent(link, clips)
-print(contexttoQns(context, quantity, type).text)
+    # Initialize Selenium WebDriver with headless Chrome
+    browser = webdriver.Chrome(options=chrome_options)
+    browser.get(link)
 
+    # Saving page HTML to a variable
+    html = browser.page_source
 
-# LinktoQns(link, quantity, type)
+    #Ignoring load errors due to bad request / no access to certain resources
+    options = {
+    'load-error-handling': 'ignore',
+    'enable-local-file-access': '' 
+    }
+    # Saving HTML to PDF
+    pdfkit.from_string(html, 'output.pdf', options=options)
+    pdftoQns(quantity, type, 'output')
+    os.remove('output.pdf')
 
+    # Close the browser
+    browser.quit()
+
+# link = str(input("Enter the video link: "))
+# type = input("What type of questions do you want? (flashcard or question_paper): ")
+# quantity = input("How many questions do you want? ")
+# context = compilationcontent(link, clips)
+# print(contexttoQns(context, quantity, type).text)
+
+# websitetopdf() #not all websites work, some websites have restrictions on scraping
+# pdftoQns("", 'flashcard', 'test')
 
 
 # Things to consider.
