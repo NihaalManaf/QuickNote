@@ -9,7 +9,9 @@ from youtube_transcript_api import YouTubeTranscriptApi
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 from google.cloud import storage
-
+import prompts
+from moviepy.editor import VideoFileClip
+import math
 
 
 load_dotenv()
@@ -24,29 +26,30 @@ bucket_name = os.getenv('bucket_name')
 vertexai.init(project=project_id, location=location)
 
 quantity, type, content = "", "", ""
+clips = []
 
-def generate_qns_googleapi() -> str:
+def generate_qns_googleapi(prompt, data_type, file) -> str:
     vision_model = GenerativeModel("gemini-1.0-pro-vision")
     response = vision_model.generate_content(
         [
             Part.from_uri(
-                "gs://quicknotevideos/set.mp4", mime_type="video/mp4"
+                "gs://"+ bucket_name +"/"+ file, mime_type=data_type
             ),
-            "Generate 10 questions based on the video content and provide the answers below. If there is math content, you should ask sample math questions instead of the concepts themselves.",
+            prompt,
         ]
     )
     return response
 
-def upload_blob(bucket_name, source_file_name, destination_blob_name):
+def upload_blob(bucket_name, source_file_name):
     """Uploads a file to the bucket."""
     bucket = storage_client.get_bucket(bucket_name)
-    blob = bucket.blob(destination_blob_name)
+    blob = bucket.blob(source_file_name)
 
     blob.upload_from_filename(source_file_name)
 
     print(
         "File {} uploaded to {}.".format(
-            source_file_name, destination_blob_name
+            source_file_name, source_file_name
         )
     )
 
@@ -85,6 +88,18 @@ def download_video(video_url):
 
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
         ydl.download([video_url])
+    
+    clip_length = 120  # 2 minutes
+    video = VideoFileClip('set.mp4')
+    video_length = int(video.duration)
+    num_clips = math.ceil(video_length / clip_length)
+
+    for i in range(num_clips):
+        start_time = i * clip_length
+        end_time = min((i + 1) * clip_length, video_length)
+        clip = video.subclip(start_time, end_time)
+        clip.write_videofile(f"{'set.mp4'}_clip_{i+1}.mp4", codec="libx264", audio_codec="aac")
+        clips.append(f"{'set.mp4'}_clip_{i+1}.mp4")
 
 def extract_frames(video_path, interval):
     cap = cv2.VideoCapture(video_path)
@@ -115,39 +130,74 @@ def extract_text_from_pdf(pdf_path):
             text += page.extract_text()
     return text
 
-# quantity = input("How many questions would you like?: ")
-# type = input("How would you like the output?: ")
 
-def LinktoQns(video_url):
-    download_video(video_url) #downloads video
-    upload_blob(bucket_name, 'set.mp4', 'set.mp4')
-    print(generate_qns_googleapi().text) #Google API Call
-    delete_blob(bucket_name, 'set.mp4')
+#main functions to generate output
+
+def compilationcontent(video_url, clips):
+    prompt = "Provide as much information as possible from the video that is revelant."
+    context = ""
+    download_video(video_url)
+    for clip in clips: 
+        upload_blob(bucket_name, clip)
+        context = generate_qns_googleapi(prompt, 'video/mp4', clip).text + context
+        delete_blob(bucket_name, clip)
+        os.remove(clip)
     os.remove('set.mp4')
+    return context
+
+def contexttoQns(context, quantity, type):
     
-# answer = openai.ChatCompletion.create(
-#     model='gpt-3.5-turbo',
-#     messages=[
-#         {"role": "system",
-#         "content": "create" + quantity + "questions from the following text. Return data as " + type + 
-#         """ for the user. If user needs notes, provide as much info as possible in a condesned manner. 
-#         If the user needs flashcards or question paper, provide the number of questions mentioned previously and put all the quetsions together first and then povide an answer for each question below in the same order"""},
-#         {"role": "user", "content": content},
-#     ]
-# )
+    if type == 'flashcard':
+        prompt = prompts.flashcard
+    else:
+        prompt = prompts.question_paper
 
-# answer = answer.choices[0].message.content
-# print(answer)
-
-# extract_frames('set.mp4', 5)  # Extract frames from downloaded videso | DEEMED REDUNDANT
-# get_transcript(video_url) #downloads transcipt from video | DEEMED REDUNDANT
-# content = extract_text_from_pdf(pdf_path) #GPT-3.5 API Call | DEEMED REDUNDANT
+    vision_model = GenerativeModel("gemini-1.0-pro-vision")
+    context = context + prompt + quantity
+    response = vision_model.generate_content(context)
+    return response
+    
 
 
-video_url =input("Enter the video URL: ")
-LinktoQns(video_url)
+def pdftoQns(quantity, type):
+    
+    if type == 'flashcard':
+        prompt = prompts.flashcard
+    else:
+        prompt = prompts.question_paper
+
+    upload_blob(bucket_name, 'pdf.pdf')
+    print(generate_qns_googleapi(prompt + quantity, 'application/pdf', 'pdf.pdf').text) #Google API Call
+    delete_blob(bucket_name, 'pdf.pdf')
+
+
+link = str(input("Enter the video link: "))
+type = input("What type of questions do you want? (flashcard or question_paper): ")
+quantity = input("How many questions do you want? ")
+context = compilationcontent(link, clips)
+print(contexttoQns(context, quantity, type).text)
+
+
+# LinktoQns(link, quantity, type)
+
+
 
 # Things to consider.
 # Video name is not unique. So when multiple people use this, it may end up crashing the system. So once we are 
 # closer to completing the back end and begin front end production, we should consider how this will function 
 # with multiple users. possibly requiring mongodb
+
+# Things to consider for optimization of youtube video to Questions
+# Video Splitting: If your hardware supports it, process multiple video clips in parallel. This can be done by creating separate threads or processes for each video clip.
+# Uploading: Upload multiple clips simultaneously using asynchronous requests or multi-threading.
+# Batch Processing: Instead of processing each video clip individually, see if it's possible to batch-process multiple clips together in a single request, if the API supports it. This can significantly reduce the number of API calls and waiting time.
+# Reducing Video Quality
+# Direct Cloud Processing: If possible, perform the video splitting and processing directly in the cloud. 
+# Compress data where appropriate to reduce upload and download times
+
+# video maxumum length is 2 minutes
+# maximum number of pages in a pdf is 16
+
+# extract_frames('set.mp4', 5)  # Extract frames from downloaded videso | DEEMED REDUNDANT
+# get_transcript(video_url) #downloads transcipt from video | DEEMED REDUNDANT
+# content = extract_text_from_pdf(pdf_path) #GPT-3.5 API Call | DEEMED REDUNDANT
