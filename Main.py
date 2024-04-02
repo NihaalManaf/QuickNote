@@ -17,13 +17,13 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import pdfkit
-from PyPDF2 import PdfFileReader, PdfFileWriter
-import time
+from PyPDF2 import PdfReader, PdfWriter, PdfFileReader
+import time, logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 load_dotenv()
 openai.api_key = os.getenv('openAI_token')
-pdf_path = os.getenv('pdf_path')
 project_id = os.getenv('project_id')
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'service_account.json'
 storage_client = storage.Client()
@@ -34,6 +34,7 @@ vertexai.init(project=project_id, location=location)
 
 quantity, type, content = "", "", ""
 clips = []
+pdfs = []
 
 def generate_qns_googleapi(prompt, data_type, file) -> str:
     vision_model = GenerativeModel("gemini-1.0-pro-vision")
@@ -137,35 +138,16 @@ def extract_text_from_pdf(pdf_path):
             text += page.extract_text()
     return text
 
-def split_pdf(input_pdf, output_folder, max_pages=16):
-    # Create a PdfFileReader object to read the input PDF
-    pdf_reader = PdfFileReader(input_pdf)
+def split_pdf(input_pdf):
+    pdf_reader = PdfReader(input_pdf)
 
-    # Get the total number of pages in the input PDF
-    total_pages = pdf_reader.numPages
+    for i in range(len(pdf_reader.pages)):
+        pdf_writer = PdfWriter()
+        pdf_writer.add_page(pdf_reader.pages[i])
 
-    # Calculate the number of PDFs needed
-    num_pdfs = (total_pages + max_pages - 1) // max_pages
-
-    # Iterate through each chunk of pages
-    for i in range(num_pdfs):
-        # Create a new PdfFileWriter object for each chunk
-        pdf_writer = PdfFileWriter()
-
-        # Determine the start and end page for the current chunk
-        start_page = i * max_pages
-        end_page = min((i + 1) * max_pages, total_pages)
-
-        # Add pages from the input PDF to the writer for the current chunk
-        for page_number in range(start_page, end_page):
-            pdf_writer.addPage(pdf_reader.getPage(page_number))
-
-        # Create a new PDF file name for the current chunk
-        output_pdf = os.path.join(output_folder, f"output_{i + 1}.pdf")
-
-        # Write the current chunk to the output PDF file
-        with open(output_pdf, "wb") as output_file:
-            pdf_writer.write(output_file)
+        with open(f"page_{i + 1}.pdf", "wb") as output_pdf:
+            pdf_writer.write(output_pdf)
+            pdfs.append(f"page_{i + 1}.pdf")
 
 #main functions to generate output
 
@@ -193,17 +175,66 @@ def contexttoQns(context, quantity, type):
     response = vision_model.generate_content(context)
     return response
 
+def upload_file(file):
+    try:
+        upload_blob(bucket_name, file)
+        return file
+    except Exception as e:
+        logging.error(f"Error uploading {file}: {e}")
+        return None
+
+# Function to make an API request
+def make_api_request(file, prompt):
+    try:
+        print("scanning")
+        text = generate_qns_googleapi("Extract as much information as possible", 'application/pdf', file).text
+        return text
+    except Exception as e:
+        logging.error(f"Error in API request for {file}: {e}")
+        return ""
+
+# Function to delete a file
+def delete_file(file):
+    delete_blob(bucket_name, file)
+    os.remove(file)
 
 def pdftoQns(quantity, type, name):
-    
     if type == 'flashcard':
         prompt = prompts.flashcard
     else:
         prompt = prompts.question_paper
+    
+    split_pdf(name + '.pdf')
+    
+    # Upload files in parallel
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(upload_file, pdf) for pdf in pdfs]
+        uploaded_files = [future.result() for future in as_completed(futures)]
 
-    upload_blob(bucket_name, name+'.pdf')
-    print(generate_qns_googleapi(prompt + quantity, 'application/pdf', name +'.pdf').text) #Google API Call
-    delete_blob(bucket_name, name+'.pdf')
+    print("upload done")
+
+    # Make API requests in parallel
+    with ThreadPoolExecutor(max_workers= 8) as executor:
+        futures = []
+        for file in uploaded_files:
+            if file is not None:
+                future = executor.submit(make_api_request, file, prompt)
+                futures.append(future)
+                time.sleep(1)  # Wait for 0.5 seconds before starting the next thread
+
+        contexts = [future.result() for future in as_completed(futures)]
+        full_context = ''.join(contexts)
+    
+    print(contexts)
+    print("deleting files now")
+
+    # Delete files
+    for file in uploaded_files:
+        if file is not None:
+            delete_file(file)
+
+    print(contexttoQns(full_context, quantity, type).text)
+
 
 def websitetopdf():
     link = input("Enter the website URL: ")
@@ -238,8 +269,9 @@ def websitetopdf():
 # context = compilationcontent(link, clips)
 # print(contexttoQns(context, quantity, type).text)
 
+logging.basicConfig(level=logging.INFO)
 # websitetopdf() #not all websites work, some websites have restrictions on scraping
-# pdftoQns("", 'flashcard', 'test')
+pdftoQns("10", 'flashcard', 'test')
 
 
 # Things to consider.
@@ -254,6 +286,7 @@ def websitetopdf():
 # Reducing Video Quality
 # Direct Cloud Processing: If possible, perform the video splitting and processing directly in the cloud. 
 # Compress data where appropriate to reduce upload and download times
+# Output qns as soon as it loads in instead of loading all at once after all pdfs/clips has been processed
 
 # video maxumum length is 2 minutes
 # maximum number of pages in a pdf is 16
