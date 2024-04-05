@@ -220,7 +220,7 @@ def pdftoQns(quantity, type, name):
             if file is not None:
                 future = executor.submit(make_api_request, file, prompt)
                 futures.append(future)
-                time.sleep(1)  # Wait for 0.5 seconds before starting the next thread
+                time.sleep(0.5)  # Wait for 0.5 seconds before starting the next thread
 
         contexts = [future.result() for future in as_completed(futures)]
         full_context = ''.join(contexts)
