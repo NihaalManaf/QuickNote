@@ -1,3 +1,4 @@
+
 import openai
 import os
 import re
@@ -228,16 +229,19 @@ def pdftoQns(quantity, type, name):
     print(contexts)
     print("deleting files now")
 
-    # Delete files
-    for file in uploaded_files:
-        if file is not None:
-            delete_file(file)
-
     print(contexttoQns(full_context, quantity, type).text)
+
+    # Delete files
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(delete_file, pdf) for pdf in pdfs]
+
+    
 
 
 def websitetopdf():
     link = input("Enter the website URL: ")
+    type = input("What type of questions do you want? (flashcard or question_paper): ")
+    quantity = input("How many questions do you want? ")
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
@@ -256,9 +260,9 @@ def websitetopdf():
     'enable-local-file-access': '' 
     }
     # Saving HTML to PDF
-    pdfkit.from_string(html, 'output.pdf', options=options)
-    pdftoQns(quantity, type, 'output')
-    os.remove('output.pdf')
+    pdfkit.from_string(html, 'test.pdf', options=options)
+    pdftoQns(quantity, type, 'test')
+    os.remove('test.pdf')
 
     # Close the browser
     browser.quit()
@@ -270,8 +274,8 @@ def websitetopdf():
 # print(contexttoQns(context, quantity, type).text)
 
 logging.basicConfig(level=logging.INFO)
-# websitetopdf() #not all websites work, some websites have restrictions on scraping
-pdftoQns("10", 'flashcard', 'test')
+websitetopdf() #not all websites work, some websites have restrictions on scraping
+# pdftoQns("10", 'flashcard', 'test')
 
 
 # Things to consider.
