@@ -25,6 +25,7 @@ import pdfkit
 from PyPDF2 import PdfReader, PdfWriter, PdfFileReader
 import time, logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import asyncio
 
 load_dotenv()
 TOKEN = os.getenv('telegram_token')
@@ -41,9 +42,9 @@ bucket_name = os.getenv('bucket_name')
 vertexai.init(project=project_id, location=location)
 
 #Back end functions -------------------------
-def generate_qns_googleapi(prompt, data_type, file) -> str:
+async def generate_qns_googleapi(prompt, data_type, file) -> str:
     vision_model = GenerativeModel("gemini-1.0-pro-vision")
-    response = vision_model.generate_content(
+    response = await vision_model.generate_content(
         [
             Part.from_uri(
                 "gs://"+ bucket_name +"/"+ file, mime_type=data_type
@@ -53,12 +54,12 @@ def generate_qns_googleapi(prompt, data_type, file) -> str:
     )
     return response
 
-def upload_blob(bucket_name, source_file_name):
+async def upload_blob(bucket_name, source_file_name):
     """Uploads a file to the bucket."""
     bucket = storage_client.get_bucket(bucket_name)
     blob = bucket.blob(source_file_name)
 
-    blob.upload_from_filename(source_file_name)
+    await blob.upload_from_filename(source_file_name)
 
     print(
         "File {} uploaded to {}.".format(
@@ -66,12 +67,12 @@ def upload_blob(bucket_name, source_file_name):
         )
     )
 
-def delete_blob(bucket_name, blob_name):
+async def delete_blob(bucket_name, blob_name):
     """Deletes a blob from the bucket."""
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
 
-    blob.delete()
+    await blob.delete()
 
     print(f"Blob {blob_name} deleted.")
 
@@ -154,19 +155,19 @@ def split_pdf(input_pdf):
             pdf_writer.write(output_pdf)
             pdfs.append(f"page_{i + 1}.pdf")
 
-def compilationcontent(video_url, clips):
+async def compilationcontent(video_url, clips):
     prompt = "Provide as much information as possible from the video that is revelant."
     context = ""
     download_video(video_url)
     for clip in clips: 
-        upload_blob(bucket_name, clip)
-        context = generate_qns_googleapi(prompt, 'video/mp4', clip).text + context
-        delete_blob(bucket_name, clip)
+        await upload_blob(bucket_name, clip)
+        context = await generate_qns_googleapi(prompt, 'video/mp4', clip).text + context
+        await delete_blob(bucket_name, clip)
         os.remove(clip)
     os.remove('set.mp4')
     return context
 
-def contexttoQns(context, quantity, type):
+async def contexttoQns(context, quantity, type):
     
     if type == 'flashcard':
         prompt = prompts.flashcard
@@ -175,29 +176,31 @@ def contexttoQns(context, quantity, type):
 
     vision_model = GenerativeModel("gemini-1.0-pro-vision")
     context = context + prompt + quantity
-    response = vision_model.generate_content(context).text
+    response = await vision_model.generate_content(context).text
     return response
 
-def upload_file(file):
+async def upload_file(file):
     try:
-        upload_blob(bucket_name, file)
+        await upload_blob(bucket_name, file)
         return file
     except Exception as e:
         logging.error(f"Error uploading {file}: {e}")
         return None
 
-def make_api_request(file, prompt):
+async def make_api_request(file, prompt):
     try:
-        text = generate_qns_googleapi("Extract as much information as possible", 'application/pdf', file).text
+        text = await generate_qns_googleapi("Extract as much information as possible", 'application/pdf', file).text
         print(text)
         return text
     except Exception as e:
         logging.error(f"Error in API request for {file}: {e}")
         return ""
 
-def delete_file(file):
-    delete_blob(bucket_name, file)
+async def delete_file(file):
+    await delete_blob(bucket_name, file)
     os.remove(file)
+
+pdfs = []  # Initialize pdfs as an empty list
 
 def pdftoQns(quantity, type, name):
     if type == 'flashcard':
@@ -228,7 +231,10 @@ def pdftoQns(quantity, type, name):
     
     print("deleting files now")
 
-    print(contexttoQns(full_context, quantity, type).text)
+    async def print_context():
+        print(await contexttoQns(full_context, quantity, type).text)
+
+    asyncio.run(print_context())  # Run the async function
 
     # Delete files
     with ThreadPoolExecutor() as executor:
@@ -266,12 +272,13 @@ def websitetopdf():
 async def linktoqns(link, quantity, type):
     clips = []
     print("Downloading video")
-    content = compilationcontent(link, clips)
-    return contexttoQns(content, quantity, type)
+    content = await compilationcontent(link, clips)
+    return await contexttoQns(content, quantity, type)
 
 #Start and basic Commands -------------------
          
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("Start command")
     await update.message.reply_text("Hello! Welcome to QuickNote. We are still in development.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -295,12 +302,14 @@ async def get_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content_type = update.message.text
     context.user_data['type'] = content_type
+    print(context.user_data['type'])
     await update.message.reply_text("Please enter the quantity of questions you want to generate.")
     return QNTY
 
 async def get_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     quantity = update.message.text
     context.user_data['quantity'] = quantity
+    print(context.user_data['quantity'])
     await update.message.reply_text("Generating questions...")
     return RETURNQNS
 
