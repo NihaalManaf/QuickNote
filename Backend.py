@@ -21,6 +21,7 @@ import pdfkit
 from PyPDF2 import PdfReader, PdfWriter, PdfFileReader
 import time, logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pymongo import MongoClient
 
 
 load_dotenv()
@@ -71,14 +72,11 @@ def delete_blob(bucket_name, blob_name):
 
     print(f"Blob {blob_name} deleted.")
 
-def get_youtube_video_id(url):
-    # Extract video ID from URL
-    regex = r'(?:youtube\.com\/(?:[^\/\n\s]+\/\s*[^\/\n\s]+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})'
-    match = re.search(regex, url)
-    return match.group(1) if match else None
-
 def get_transcript(video_url):
-    video_id = get_youtube_video_id(video_url)
+    regex = r'(?:youtube\.com\/(?:[^\/\n\s]+\/\s*[^\/\n\s]+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})'
+    match = re.search(regex, video_url)
+    
+    video_id = math.group(1) if match else None
     if video_id:
         try:
             transcript = YouTubeTranscriptApi.get_transcript(video_id)
@@ -89,17 +87,17 @@ def get_transcript(video_url):
     else:
         print("Invalid YouTube URL")
 
-def download_video(video_url):
+def download_video(video_url, id):
     ydl_opts = {
         'format': 'worst', 
-        'outtmpl': 'set.%(ext)s',  
+        'outtmpl': f'{id}.%(ext)s',  
     }
 
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
         ydl.download([video_url])
     
     clip_length = 120  # 2 minutes
-    video = VideoFileClip('set.mp4')
+    video = VideoFileClip(f'{id}.mp4')
     video_length = int(video.duration)
     num_clips = math.ceil(video_length / clip_length)
 
@@ -107,61 +105,32 @@ def download_video(video_url):
         start_time = i * clip_length
         end_time = min((i + 1) * clip_length, video_length)
         clip = video.subclip(start_time, end_time)
-        clip.write_videofile(f"{'set.mp4'}_clip_{i+1}.mp4", codec="libx264", audio_codec="aac")
-        clips.append(f"{'set.mp4'}_clip_{i+1}.mp4")
+        clip.write_videofile(f"{id}_clip_{i+1}.mp4", codec="libx264", audio_codec="aac")
+        clips.append(f"{id}_clip_{i+1}.mp4")
 
-def extract_frames(video_path, interval):
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS) 
-    frame_interval = int(fps * interval)
-
-    frame_count = 0
-    saved_frame_count = 0
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        if frame_count % frame_interval == 0:
-            filename = f'frame_{saved_frame_count}.jpg'
-            cv2.imwrite(filename, frame)
-            saved_frame_count += 1
-
-        frame_count += 1
-
-    cap.release()
-
-def extract_text_from_pdf(pdf_path):
-    text = ''
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text += page.extract_text()
-    return text
-
-def split_pdf(input_pdf):
+def split_pdf(input_pdf, id):
     pdf_reader = PdfReader(input_pdf)
 
     for i in range(len(pdf_reader.pages)):
         pdf_writer = PdfWriter()
         pdf_writer.add_page(pdf_reader.pages[i])
 
-        with open(f"page_{i + 1}.pdf", "wb") as output_pdf:
+        with open(f"{id}_page_{i + 1}.pdf", "wb") as output_pdf:
             pdf_writer.write(output_pdf)
-            pdfs.append(f"page_{i + 1}.pdf")
+            pdfs.append(f"{id}_page_{i + 1}.pdf")
 
 #main functions to generate output
 
-def compilationcontent(video_url, clips):
+def compilationcontent(video_url, clips, id):
     prompt = "Provide as much information as possible from the video that is revelant."
     context = ""
-    download_video(video_url)
+    download_video(video_url, id)
     for clip in clips: 
         upload_blob(bucket_name, clip)
         context = generate_qns_googleapi(prompt, 'video/mp4', clip).text + context
         delete_blob(bucket_name, clip)
         os.remove(clip)
-    os.remove('set.mp4')
+    os.remove(f'{id}.mp4')
     return context
 
 def contexttoQns(context, quantity, type):
@@ -184,7 +153,6 @@ def upload_file(file):
         logging.error(f"Error uploading {file}: {e}")
         return None
 
-# Function to make an API request
 def make_api_request(file, prompt):
     try:
         text = generate_qns_googleapi("Extract as much information as possible", 'application/pdf', file).text
@@ -201,7 +169,7 @@ def delete_file(file):
 
 def pdftoQns(quantity, type, name):
     if type == 'flashcard':
-        prompt = "tell me all the historical and logical errors from this text"
+        prompt = prompts.flashcard
     else:
         prompt = prompts.question_paper
     
@@ -265,7 +233,7 @@ def websitetopdf():
     browser.quit()
 
 def linktoqns(link, quantity, type):
-    content = compilationcontent(link, clips)
+    content = compilationcontent(link, clips, 'nihaalmanaf')
     return contexttoQns(content, quantity, type)
 
 link = str(input("Enter the video link: "))
@@ -298,3 +266,35 @@ logging.basicConfig(level=logging.INFO)
 # extract_frames('set.mp4', 5)  # Extract frames from downloaded videso | DEEMED REDUNDANT
 # get_transcript(video_url) #downloads transcipt from video | DEEMED REDUNDANT
 # content = extract_text_from_pdf(pdf_path) #GPT-3.5 API Call | DEEMED REDUNDANT
+# def extract_frames(video_path, interval): | DEEMED REDUNDANT
+#     cap = cv2.VideoCapture(video_path)
+#     fps = cap.get(cv2.CAP_PROP_FPS) 
+#     frame_interval = int(fps * interval)
+
+#     frame_count = 0
+#     saved_frame_count = 0
+
+#     while True:
+#         ret, frame = cap.read()
+#         if not ret:
+#             break
+
+#         if frame_count % frame_interval == 0:
+#             filename = f'frame_{saved_frame_count}.jpg'
+#             cv2.imwrite(filename, frame)
+#             saved_frame_count += 1
+
+#         frame_count += 1
+
+#     cap.release()
+# def extract_text_from_pdf(pdf_path): 
+#     text = ''
+#     with pdfplumber.open(pdf_path) as pdf:
+#         for page in pdf.pages:
+#             text += page.extract_text()
+#     return text
+
+
+#Things to add to MongoDB
+# Clips array containing names of clips for each user id
+# PDFs array containing names of pages for each user id
