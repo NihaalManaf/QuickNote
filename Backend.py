@@ -5,7 +5,7 @@ import re
 import pdfplumber
 from dotenv import load_dotenv, dotenv_values
 import cv2
-import youtube_dl
+import yt_dlp as youtube_dl
 from youtube_transcript_api import YouTubeTranscriptApi
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
@@ -173,7 +173,7 @@ def contexttoQns(context, quantity, type):
 
     vision_model = GenerativeModel("gemini-1.0-pro-vision")
     context = context + prompt + quantity
-    response = vision_model.generate_content(context)
+    response = vision_model.generate_content(context).text
     return response
 
 def upload_file(file):
@@ -265,15 +265,13 @@ def websitetopdf():
     browser.quit()
 
 def linktoqns(link, quantity, type):
-    clips = []
     content = compilationcontent(link, clips)
-    return contexttoQns(content, quantity, type).text
+    return contexttoQns(content, quantity, type)
 
-# link = str(input("Enter the video link: "))
-# type = input("What type of questions do you want? (flashcard or question_paper): ")
-# quantity = input("How many questions do you want? ")
-# context = compilationcontent(link, clips)
-# print(contexttoQns(context, quantity, type).text)
+link = str(input("Enter the video link: "))
+type = input("What type of questions do you want? (flashcard or question_paper): ")
+quantity = input("How many questions do you want? ")
+print(linktoqns(link, quantity, type))
 
 logging.basicConfig(level=logging.INFO)
 # websitetopdf() #not all websites work, some websites have restrictions on scraping
