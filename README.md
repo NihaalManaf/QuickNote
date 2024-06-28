@@ -9,3 +9,6 @@ QuickNote will compile all kinds of resources such as youtube videos, websites a
 
 2. There is also a multiple user issue as video name is not unique. So when multiple people use this, it may end up crashing the system. So once we are 
 closer to completing the back end and begin front end development, we should consider how this will function with multiple users - possibly requiring mongodb
+
+
+**This project is incomplete and abandoned, until further considerstaion**
